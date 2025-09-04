@@ -29,17 +29,29 @@ router.get('/categories', catchAsync(async (req: Request, res: Response): Promis
       }
     ]);
 
-    const categoryData = categories.map(cat => ({
-      name: cat._id,
-      count: cat.count,
-      avgRating: Math.round(cat.avgRating * 10) / 10,
-      totalDownloads: cat.totalDownloads
+    // Get popular mods for each category
+    const categoriesWithMods = await Promise.all(categories.map(async (cat) => {
+      const popularMods = await Mod.find({ 
+        category: cat._id, 
+        isActive: true 
+      })
+        .select('name downloads rating')
+        .sort({ downloads: -1, rating: -1 })
+        .limit(4);
+
+      return {
+        name: cat._id,
+        count: cat.count,
+        avgRating: Math.round(cat.avgRating * 10) / 10,
+        totalDownloads: cat.totalDownloads,
+        popularMods: popularMods.map(mod => mod.name)
+      };
     }));
 
     res.status(200).json({
       status: 'success',
       data: {
-        categories: categoryData
+        categories: categoriesWithMods
       }
     });
   } catch (error) {
@@ -103,7 +115,7 @@ router.get('/', optionalAuthMiddleware, [
   // Execute query
   const [mods, total] = await Promise.all([
     Mod.find(filter)
-      .select('name slug thumbnail type price shortDescription downloads rating ratingCount game category tags publishedAt isFeatured')
+      .select('name slug thumbnail type price shortDescription downloads rating ratingCount game category tags publishedAt isFeatured author')
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -132,7 +144,7 @@ router.get('/', optionalAuthMiddleware, [
 // Get featured mods
 router.get('/featured', optionalAuthMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
   const mods = await Mod.find({ isActive: true, isFeatured: true })
-    .select('name slug thumbnail type price shortDescription downloads rating game category')
+    .select('name slug thumbnail type price shortDescription downloads rating game category author publishedAt')
     .sort({ publishedAt: -1 })
     .limit(6)
     .populate('author.id', 'username');
@@ -154,7 +166,7 @@ router.get('/popular', optionalAuthMiddleware, catchAsync(async (req: Request, r
       { downloads: { $gte: 1000 }, rating: { $gte: 4.0 } }  // Auto-popular threshold
     ]
   })
-    .select('name slug thumbnail type price shortDescription downloads rating game category isPopular')
+    .select('name slug thumbnail type price shortDescription downloads rating game category isPopular author')
     .sort({ isPopular: -1, downloads: -1, rating: -1 })  // Manual popular first
     .limit(8)
     .populate('author.id', 'username');
@@ -169,7 +181,7 @@ router.get('/popular', optionalAuthMiddleware, catchAsync(async (req: Request, r
 // Get recent mods
 router.get('/recent', optionalAuthMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
   const mods = await Mod.find({ isActive: true })
-    .select('name slug thumbnail type price shortDescription downloads rating game category publishedAt')
+    .select('name slug thumbnail type price shortDescription downloads rating game category publishedAt author')
     .sort({ publishedAt: -1 })
     .limit(8)
     .populate('author.id', 'username');
@@ -181,12 +193,150 @@ router.get('/recent', optionalAuthMiddleware, catchAsync(async (req: Request, re
   });
 }));
 
+// Get platform stats for about page
+router.get('/stats', catchAsync(async (req: Request, res: Response): Promise<any> => {
+  try {
+    // Get total users count
+    const totalUsers = await User.countDocuments({ isActive: true });
+    
+    // Get total mods count
+    const totalMods = await Mod.countDocuments({ isActive: true });
+    
+    // Get total downloads
+    const downloadStats = await Mod.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: null, totalDownloads: { $sum: '$downloads' } } }
+    ]);
+    
+    // Get average rating
+    const ratingStats = await Mod.aggregate([
+      { $match: { isActive: true, rating: { $gt: 0 } } },
+      { $group: { _id: null, avgRating: { $avg: '$rating' } } }
+    ]);
+    
+    // Get total reviews count
+    const totalReviews = await Review.countDocuments();
+    
+    // Get featured mods count
+    const featuredMods = await Mod.countDocuments({ isActive: true, isFeatured: true });
+    
+    // Get popular mods count (using our hybrid logic)
+    const popularMods = await Mod.countDocuments({
+      isActive: true,
+      $or: [
+        { isPopular: true },
+        { downloads: { $gte: 1000 }, rating: { $gte: 4.0 } }
+      ]
+    });
+
+    res.json({
+      status: 'success',
+      data: {
+        totalUsers,
+        totalMods,
+        totalDownloads: downloadStats[0]?.totalDownloads || 0,
+        averageRating: ratingStats[0]?.avgRating || 0,
+        totalReviews,
+        featuredMods,
+        popularMods
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching platform stats:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch platform stats'
+    });
+  }
+}));
+
+// Get contributors/users with their stats for about page
+router.get('/contributors', catchAsync(async (req: Request, res: Response): Promise<any> => {
+  try {
+    // Get users who have uploaded mods with their stats
+    const contributors = await User.aggregate([
+      {
+        $match: { isActive: true }
+      },
+      {
+        $lookup: {
+          from: 'mods',
+          localField: '_id',
+          foreignField: 'author.id',
+          as: 'mods'
+        }
+      },
+      {
+        $addFields: {
+          modsCount: { $size: '$mods' },
+          totalDownloads: { $sum: '$mods.downloads' },
+          averageRating: { $avg: '$mods.rating' }
+        }
+      },
+      {
+        $match: {
+          $or: [
+            { modsCount: { $gt: 0 } }, // Users with mods
+            { role: { $in: ['admin', 'moderator'] } } // Admin/moderator users
+          ]
+        }
+      },
+      {
+        $project: {
+          username: 1,
+          email: 1,
+          role: 1,
+          avatar: 1,
+          bio: 1,
+          joinedAt: '$createdAt',
+          modsCount: 1,
+          totalDownloads: 1,
+          averageRating: 1,
+          isActive: 1
+        }
+      },
+      {
+        $sort: { 
+          role: 1, // Admins first
+          totalDownloads: -1, // Then by downloads
+          modsCount: -1 // Then by mod count
+        }
+      }
+    ]);
+
+    // Separate users by role
+    const owner = contributors.find(user => user.username.toLowerCase() === 'sekhon');
+    const admins = contributors.filter(user => user.role === 'admin' && user.username.toLowerCase() !== 'sekhon');
+    const moderators = contributors.filter(user => user.role === 'moderator');
+    const regularContributors = contributors.filter(user => 
+      user.role === 'user' && user.modsCount > 0
+    );
+
+    res.json({
+      status: 'success',
+      data: {
+        owner: owner || null,
+        admins,
+        moderators,
+        contributors: regularContributors,
+        totalContributors: contributors.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching contributors:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch contributors'
+    });
+  }
+}));
+
 // Get single mod by slug
 router.get('/:slug', optionalAuthMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
   const { slug } = req.params;
 
   const mod = await Mod.findOne({ slug, isActive: true })
-    .populate('author.id', 'username avatar')
+    .populate('author.id', 'username avatar gamerTag')
     .populate('reviews.userId', 'username avatar');
 
   if (!mod) {
@@ -207,9 +357,15 @@ router.get('/:slug', optionalAuthMiddleware, catchAsync(async (req: Request, res
     canDownload = await mod.canUserDownload(req.user._id);
   }
 
+  // Ensure author name is available
+  const populatedAuthor = mod.author.id as any; // Handle populated author
   const modData = {
     ...mod.toObject(),
-    canDownload
+    canDownload,
+    author: {
+      name: mod.author.name || populatedAuthor?.username || 'Unknown Author',
+      id: mod.author.id
+    }
   };
 
   res.json({
@@ -543,17 +699,9 @@ router.get('/:slug/reviews/my-review', authMiddleware, catchAsync(async (req: Re
   // Get user's review
   const review = await Review.getUserReviewForMod(userId, String(mod._id));
 
-  if (!review) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Review not found',
-      code: 'REVIEW_NOT_FOUND'
-    });
-  }
-
   res.json({
     status: 'success',
-    data: { review }
+    data: { review: review || null }
   });
 }));
 
@@ -817,6 +965,180 @@ router.delete('/:slug/reviews/:reviewId/vote', authMiddleware, catchAsync(async 
       downvotes: review.downvotes,
       userVote: null
     }
+  });
+}));
+
+// Update/Edit mod (owner or admin only)
+router.patch('/:id', authMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const modId = req.params.id;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+
+  const mod = await Mod.findById(modId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found',
+      code: 'MOD_NOT_FOUND'
+    });
+  }
+
+  // Check permissions: owner or admin
+  const isOwner = mod.author.toString() === userId.toString();
+  if (!isOwner && userRole !== 'admin') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'You can only edit your own mods',
+      code: 'INSUFFICIENT_PERMISSIONS'
+    });
+  }
+
+  // Fields that can be updated
+  const allowedUpdates = [
+    'name', 'description', 'shortDescription', 'version', 'game', 'category', 
+    'tags', 'thumbnail', 'screenshots', 'videoUrl', 'files', 'type', 'price', 
+    'unlockCode', 'requirements', 'dependencies', 'conflicts'
+  ];
+
+  const updates: any = {};
+  for (const field of allowedUpdates) {
+    if (req.body[field] !== undefined) {
+      updates[field] = req.body[field];
+    }
+  }
+
+  // Regenerate slug if name is being updated
+  if (updates.name && updates.name !== mod.name) {
+    const baseSlug = updates.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    
+    // Check if slug exists and make it unique
+    let uniqueSlug = baseSlug;
+    let counter = 1;
+    while (await Mod.findOne({ slug: uniqueSlug, _id: { $ne: modId } })) {
+      uniqueSlug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+    updates.slug = uniqueSlug;
+  }
+
+  // Update the mod
+  const updatedMod = await Mod.findByIdAndUpdate(modId, updates, { 
+    new: true, 
+    runValidators: true 
+  }).populate('author', 'username');
+
+  res.json({
+    status: 'success',
+    message: 'Mod updated successfully',
+    data: { mod: updatedMod }
+  });
+}));
+
+// Delete mod (owner or admin only)
+router.delete('/:id', authMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const modId = req.params.id;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+
+  const mod = await Mod.findById(modId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found',
+      code: 'MOD_NOT_FOUND'
+    });
+  }
+
+  // Check permissions: owner or admin
+  if (mod.author.id.toString() !== userId.toString() && userRole !== 'admin') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'You can only delete your own mods',
+      code: 'INSUFFICIENT_PERMISSIONS'
+    });
+  }
+
+  // Delete the mod
+  await Mod.findByIdAndDelete(modId);
+
+  res.json({
+    status: 'success',
+    message: 'Mod deleted successfully'
+  });
+}));
+
+// Unpublish mod (admin or owner)
+router.patch('/:id/unpublish', authMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const modId = req.params.id;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+
+  const mod = await Mod.findById(modId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found',
+      code: 'MOD_NOT_FOUND'
+    });
+  }
+
+  // Check if user is admin or mod owner
+  const isOwner = mod.author.toString() === userId.toString();
+  if (userRole !== 'admin' && !isOwner) {
+    return res.status(403).json({
+      status: 'error',
+      message: 'You can only unpublish your own mods',
+      code: 'INSUFFICIENT_PERMISSIONS'
+    });
+  }
+
+  // Unpublish the mod
+  mod.isActive = false;
+  await mod.save();
+
+  res.json({
+    status: 'success',
+    message: 'Mod unpublished successfully',
+    data: { mod }
+  });
+}));
+
+// Republish mod (admin or owner)
+router.patch('/:id/republish', authMiddleware, catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const modId = req.params.id;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+
+  const mod = await Mod.findById(modId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found',
+      code: 'MOD_NOT_FOUND'
+    });
+  }
+
+  // Check if user is admin or mod owner
+  const isOwner = mod.author.toString() === userId.toString();
+  if (userRole !== 'admin' && !isOwner) {
+    return res.status(403).json({
+      status: 'error',
+      message: 'You can only republish your own mods',
+      code: 'INSUFFICIENT_PERMISSIONS'
+    });
+  }
+
+  // Republish the mod
+  mod.isActive = true;
+  await mod.save();
+
+  res.json({
+    status: 'success',
+    message: 'Mod republished successfully',
+    data: { mod }
   });
 }));
 

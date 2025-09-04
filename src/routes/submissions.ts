@@ -4,6 +4,7 @@ import { body, validationResult, query } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import { ModSubmission } from '../models/ModSubmission';
 import { Mod } from '../models/Mod';
+import { User } from '../models/User';
 import { authMiddleware, adminMiddleware, verifiedMiddleware } from '../middleware/auth';
 import { catchAsync } from '../utils/catchAsync';
 
@@ -87,7 +88,8 @@ const submitModValidation = [
     .withMessage('Screenshots must be valid image URLs'),
   
   body('videoUrl')
-    .optional()
+    .optional({ checkFalsy: true })
+    .isURL()
     .matches(/^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)/)
     .withMessage('Video URL must be a valid YouTube URL'),
   
@@ -164,6 +166,7 @@ router.get('/my-submissions', authMiddleware, catchAsync(async (req: Request, re
   console.log('Getting submissions for user:', userId);
   
   const submissions = await ModSubmission.find({ submittedBy: userId })
+    .populate('publishedModId', 'slug name isActive')
     .sort({ submittedAt: -1 })
     .lean();
   console.log('Found submissions:', submissions.length);
@@ -378,6 +381,16 @@ router.patch('/admin/:id/review', authMiddleware, adminMiddleware, [
   // If approved, optionally auto-publish (or require separate publish step)
   let publishedMod = null;
   if (action === 'approve') {
+    // Get the original submitter's information
+    const originalSubmitter = await User.findById(submission.submittedBy);
+    if (!originalSubmitter) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Original submitter not found',
+        code: 'SUBMITTER_NOT_FOUND'
+      });
+    }
+
     // Create the actual mod from submission
     const modData = {
       name: submission.name,
@@ -401,7 +414,7 @@ router.patch('/admin/:id/review', authMiddleware, adminMiddleware, [
         uploadedAt: new Date()
       }],
       author: {
-        name: (req as any).user.username,
+        name: originalSubmitter.username,
         id: submission.submittedBy
       },
       downloads: 0,

@@ -487,10 +487,24 @@ modSchema.methods.trackDownload = async function(userId?: string): Promise<void>
   this.downloads += 1;
   
   if (userId) {
-    // Add to download history if user is logged in
+    // Add to mod's download history
     this.downloadHistory.push({
       userId: userId,
       downloadedAt: new Date()
+    });
+
+    // Add to user's download history
+    const User = mongoose.model('User');
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        downloadHistory: {
+          modId: this._id,
+          modName: this.name,
+          downloadedAt: new Date(),
+          downloadCount: 1,
+          type: this.type
+        }
+      }
     });
   }
   

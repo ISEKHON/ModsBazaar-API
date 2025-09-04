@@ -558,4 +558,41 @@ router.delete('/account', [
   });
 }));
 
+// Get user's uploaded mods statistics
+router.get('/mods/stats', catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const userId = req.user._id;
+
+  // Get all mods uploaded by the user
+  const userMods = await Mod.find({ 'author.id': userId, isActive: true });
+
+  if (userMods.length === 0) {
+    return res.json({
+      status: 'success',
+      data: {
+        totalMods: 0,
+        totalDownloads: 0,
+        averageRating: 0
+      }
+    });
+  }
+
+  // Calculate total downloads
+  const totalDownloads = userMods.reduce((sum, mod) => sum + (mod.downloads || 0), 0);
+
+  // Calculate average rating
+  const modsWithRatings = userMods.filter(mod => mod.rating && mod.ratingCount > 0);
+  const averageRating = modsWithRatings.length > 0 
+    ? modsWithRatings.reduce((sum, mod) => sum + mod.rating, 0) / modsWithRatings.length
+    : 0;
+
+  res.json({
+    status: 'success',
+    data: {
+      totalMods: userMods.length,
+      totalDownloads,
+      averageRating: Math.round(averageRating * 10) / 10 // Round to 1 decimal place
+    }
+  });
+}));
+
 export default router;
