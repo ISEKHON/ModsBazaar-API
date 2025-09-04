@@ -2,9 +2,9 @@ services:
   - type: web
     name: modsbazaar-backend
     env: node
-    region: singapore # You can change this to: oregon, ohio, singapore, frankfurt
-    plan: free # You can upgrade to: starter ($7/month), standard ($25/month), pro ($85/month)
-    buildCommand: npm ci && npm run build
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:

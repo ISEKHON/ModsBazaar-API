@@ -5,10 +5,11 @@
 ### 1. Prepare Your Repository
 Your backend is already configured with:
 - ✅ `package.json` with proper scripts
-- ✅ `render.yaml` configuration file
+- ✅ `render.yaml` configuration file (Node.js build)
 - ✅ Health check endpoint at `/health`
 - ✅ TypeScript build process
 - ✅ Production-ready error handling
+- ✅ Dockerfile temporarily renamed to prevent conflicts
 
 ### 2. Create a Render Account
 1. Go to [render.com](https://render.com)
@@ -122,7 +123,10 @@ NEXT_PUBLIC_API_URL=https://modsbazaar-backend.onrender.com
 ## Troubleshooting
 
 ### Common Issues:
-1. **Build fails**: Check Node.js version in render.yaml
+1. **Build fails with "tsc: not found"**: 
+   - This happens when Render uses Docker build instead of Node.js
+   - Solution: Ensure Dockerfile is renamed to `Dockerfile.backup`
+   - The render.yaml is configured for Node.js build (`env: node`)
 2. **Service won't start**: Verify environment variables
 3. **Database connection fails**: Check MongoDB URI format
 4. **CORS errors**: Ensure frontend URL is correct in environment
