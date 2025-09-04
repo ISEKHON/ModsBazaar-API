@@ -268,6 +268,19 @@ userSchema.pre('save', async function(next) {
   }
 });
 
+// Validate download history types before saving
+userSchema.pre('save', function(next) {
+  // Fix any invalid download history types
+  if (this.downloadHistory && this.downloadHistory.length > 0) {
+    this.downloadHistory.forEach((entry: any) => {
+      if (entry.type === 'paid') {
+        entry.type = 'purchased';
+      }
+    });
+  }
+  next();
+});
+
 // Update lastActive on login
 userSchema.pre(/^find/, function(next) {
   // Only for active users

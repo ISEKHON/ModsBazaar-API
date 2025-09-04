@@ -359,13 +359,43 @@ router.get('/:slug', optionalAuthMiddleware, catchAsync(async (req: Request, res
 
   // Ensure author name is available
   const populatedAuthor = mod.author.id as any; // Handle populated author
+  
+  // Create sanitized response - only include public information
   const modData = {
-    ...mod.toObject(),
-    canDownload,
+    _id: mod._id,
+    name: mod.name,
+    slug: mod.slug,
+    description: mod.description,
+    shortDescription: mod.shortDescription,
+    type: mod.type,
+    price: mod.type === 'paid' ? mod.price : undefined,
+    version: mod.version,
+    game: mod.game,
+    category: mod.category,
+    tags: mod.tags,
+    thumbnail: mod.thumbnail,
+    screenshots: mod.screenshots,
+    videoUrl: mod.videoUrl,
+    downloads: mod.downloads,
+    views: mod.views,
+    rating: mod.rating,
+    ratingCount: mod.ratingCount,
+    reviews: mod.reviews,
     author: {
       name: mod.author.name || populatedAuthor?.username || 'Unknown Author',
       id: mod.author.id
-    }
+    },
+    publishedAt: mod.publishedAt,
+    updatedAt: mod.updatedAt,
+    isFeatured: mod.isFeatured,
+    isPopular: mod.isPopular,
+    canDownload,
+    // Only include file info without sensitive download URLs
+    files: mod.files?.map(file => ({
+      name: file.name,
+      size: file.size,
+      uploadedAt: file.uploadedAt
+    })) || []
   };
 
   res.json({
@@ -450,9 +480,39 @@ router.get('/id/:id', optionalAuthMiddleware, catchAsync(async (req: Request, re
     canDownload = await mod.canUserDownload(req.user._id);
   }
 
+  // Create sanitized response - only include public information
   const modData = {
-    ...mod.toObject(),
-    canDownload
+    _id: mod._id,
+    name: mod.name,
+    slug: mod.slug,
+    description: mod.description,
+    shortDescription: mod.shortDescription,
+    type: mod.type,
+    price: mod.type === 'paid' ? mod.price : undefined,
+    version: mod.version,
+    game: mod.game,
+    category: mod.category,
+    tags: mod.tags,
+    thumbnail: mod.thumbnail,
+    screenshots: mod.screenshots,
+    videoUrl: mod.videoUrl,
+    downloads: mod.downloads,
+    views: mod.views,
+    rating: mod.rating,
+    ratingCount: mod.ratingCount,
+    reviews: mod.reviews,
+    author: mod.author,
+    publishedAt: mod.publishedAt,
+    updatedAt: mod.updatedAt,
+    isFeatured: mod.isFeatured,
+    isPopular: mod.isPopular,
+    canDownload,
+    // Only include file info without sensitive download URLs
+    files: mod.files?.map(file => ({
+      name: file.name,
+      size: file.size,
+      uploadedAt: file.uploadedAt
+    })) || []
   };
 
   res.json({

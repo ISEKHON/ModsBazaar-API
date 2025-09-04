@@ -482,6 +482,15 @@ modSchema.methods.canUserDownload = async function(userId: string): Promise<bool
   return false;
 };
 
+// Static method to map mod type to download history type
+modSchema.statics.getDownloadHistoryType = function(modType: string): string {
+  // Map 'paid' to 'purchased' for download history compatibility
+  if (modType === 'paid') {
+    return 'purchased';
+  }
+  return modType;
+};
+
 // Instance method to track download
 modSchema.methods.trackDownload = async function(userId?: string): Promise<void> {
   this.downloads += 1;
@@ -495,6 +504,7 @@ modSchema.methods.trackDownload = async function(userId?: string): Promise<void>
 
     // Add to user's download history
     const User = mongoose.model('User');
+    const downloadType = (this.constructor as any).getDownloadHistoryType(this.type);
     await User.findByIdAndUpdate(userId, {
       $push: {
         downloadHistory: {
@@ -502,7 +512,7 @@ modSchema.methods.trackDownload = async function(userId?: string): Promise<void>
           modName: this.name,
           downloadedAt: new Date(),
           downloadCount: 1,
-          type: this.type
+          type: downloadType
         }
       }
     });
