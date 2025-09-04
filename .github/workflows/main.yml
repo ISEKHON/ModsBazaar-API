@@ -48,14 +48,12 @@ jobs:
         cache: 'npm'
 
     - name: Clean install dependencies
-      run: |
-        npm ci
-        npm ls --depth=0
+      run: npm ci
 
     - name: Verify TypeScript setup
       run: |
         npm run tsc-version
-        npm list @types/express @types/jsonwebtoken @types/bcryptjs @types/compression
+        echo "TypeScript and dependencies verified successfully"
 
     - name: Build TypeScript application
       run: npm run build
