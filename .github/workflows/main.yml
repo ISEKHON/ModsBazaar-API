@@ -1,0 +1,245 @@
+name: Build and Deploy ModsBazaar Backend
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  # ModsBazaar Backend Environment Variables
+  NODE_ENV: production
+  PORT: 5000
+  MONGODB_URI: ${{ secrets.MONGODB_URI_PROD }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}
+  JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN || '7d' }}
+  REDIS_URL: ${{ secrets.REDIS_URL }}
+  EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+  EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+  EMAIL_PORT: ${{ secrets.EMAIL_PORT || '587' }}
+  EMAIL_USER: ${{ secrets.EMAIL_USER }}
+  EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+  CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+  CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+  CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+  STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+  FRONTEND_URL: ${{ secrets.FRONTEND_URL_PROD }}
+  MASTER_API_KEY: ${{ secrets.MASTER_API_KEY }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build TypeScript application
+      run: npm run build
+      env:
+        NODE_ENV: production
+        MONGODB_URI: ${{ secrets.MONGODB_URI_PROD }}
+        JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN || '7d' }}
+        REDIS_URL: ${{ secrets.REDIS_URL }}
+        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+        EMAIL_PORT: ${{ secrets.EMAIL_PORT || '587' }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        FRONTEND_URL: ${{ secrets.FRONTEND_URL_PROD }}
+        MASTER_API_KEY: ${{ secrets.MASTER_API_KEY }}
+
+    - name: Convert repository name to lowercase
+      run: |
+        echo "IMAGE_NAME_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}
+        tags: |
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          NODE_ENV=production
+          MONGODB_URI=${{ secrets.MONGODB_URI_PROD }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN || '7d' }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+          EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT=${{ secrets.EMAIL_PORT || '587' }}
+          EMAIL_USER=${{ secrets.EMAIL_USER }}
+          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
+          CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL_PROD }}
+          MASTER_API_KEY=${{ secrets.MASTER_API_KEY }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Deploy ModsBazaar Backend to Production Server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USER }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: ${{ secrets.PROD_PORT }}
+        script: |
+          set -e
+          echo "🚀 Starting deployment of ModsBazaar Backend..."
+          DEPLOY_DIR="$HOME/mods-bazaar-backend"
+          mkdir -p $DEPLOY_DIR
+          cd $DEPLOY_DIR
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          cat > .env.production << 'ENV_EOF'
+          NODE_ENV=production
+          PORT=5000
+          MONGODB_URI="${{ secrets.MONGODB_URI_PROD }}"
+          JWT_SECRET="${{ secrets.JWT_SECRET }}"
+          JWT_EXPIRES_IN="${{ secrets.JWT_EXPIRES_IN || '7d' }}"
+          REDIS_URL="${{ secrets.REDIS_URL }}"
+          EMAIL_FROM="${{ secrets.EMAIL_FROM }}"
+          EMAIL_HOST="${{ secrets.EMAIL_HOST }}"
+          EMAIL_PORT="${{ secrets.EMAIL_PORT || '587' }}"
+          EMAIL_USER="${{ secrets.EMAIL_USER }}"
+          EMAIL_PASS="${{ secrets.EMAIL_PASS }}"
+          CLOUDINARY_CLOUD_NAME="${{ secrets.CLOUDINARY_CLOUD_NAME }}"
+          CLOUDINARY_API_KEY="${{ secrets.CLOUDINARY_API_KEY }}"
+          CLOUDINARY_API_SECRET="${{ secrets.CLOUDINARY_API_SECRET }}"
+          STRIPE_SECRET_KEY="${{ secrets.STRIPE_SECRET_KEY }}"
+          STRIPE_WEBHOOK_SECRET="${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+          DISCORD_WEBHOOK_URL="${{ secrets.DISCORD_WEBHOOK_URL }}"
+          FRONTEND_URL="${{ secrets.FRONTEND_URL_PROD }}"
+          MASTER_API_KEY="${{ secrets.MASTER_API_KEY }}"
+          BCRYPT_ROUNDS="${{ secrets.BCRYPT_ROUNDS || '12' }}"
+          RATE_LIMIT_WINDOW_MS="${{ secrets.RATE_LIMIT_WINDOW_MS || '900000' }}"
+          RATE_LIMIT_MAX="${{ secrets.RATE_LIMIT_MAX || '100' }}"
+          MAX_FILE_SIZE="${{ secrets.MAX_FILE_SIZE || '100000000' }}"
+          ALLOWED_FILE_TYPES="${{ secrets.ALLOWED_FILE_TYPES || '.zip,.rar,.7z,.exe,.msi' }}"
+          ENV_EOF
+          cat > docker-compose.yml << 'COMPOSE_EOF'
+          services:
+            mods-bazaar-backend:
+              image: ghcr.io/isekhon/modsbazaar-api:latest
+              container_name: mods-bazaar-backend
+              restart: unless-stopped
+              ports:
+                - "5000:5000" # Backend API Port
+              environment:
+                - NODE_ENV=production
+                - PORT=5000
+                - MONGODB_URI=${MONGODB_URI}
+                - JWT_SECRET=${JWT_SECRET}
+                - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+                - REDIS_URL=${REDIS_URL}
+                - EMAIL_FROM=${EMAIL_FROM}
+                - EMAIL_HOST=${EMAIL_HOST}
+                - EMAIL_PORT=${EMAIL_PORT}
+                - EMAIL_USER=${EMAIL_USER}
+                - EMAIL_PASS=${EMAIL_PASS}
+                - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+                - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+                - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+                - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+                - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+                - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+                - FRONTEND_URL=${FRONTEND_URL}
+                - MASTER_API_KEY=${MASTER_API_KEY}
+                - BCRYPT_ROUNDS=${BCRYPT_ROUNDS}
+                - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS}
+                - RATE_LIMIT_MAX=${RATE_LIMIT_MAX}
+                - MAX_FILE_SIZE=${MAX_FILE_SIZE}
+                - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES}
+              healthcheck:
+                test: ["CMD", "node", "healthcheck.js"]
+                timeout: 10s
+                interval: 30s
+                retries: 3
+                start_period: 40s
+              volumes:
+                - ./uploads:/app/uploads
+                - ./logs:/app/logs
+          COMPOSE_EOF
+          echo "📦 Pulling latest images..."
+          docker-compose --env-file .env.production pull
+          echo "🛑 Stopping existing containers..."
+          docker-compose --env-file .env.production down || true
+          echo "🎯 Starting services..."
+          docker-compose --env-file .env.production up -d
+          echo "⏳ Waiting for application to be healthy..."
+          for i in {1..30}; do
+            if docker-compose --env-file .env.production ps | grep -q "healthy"; then
+              echo "✅ Application is healthy!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Application failed to become healthy within 5 minutes"
+              docker-compose --env-file .env.production logs mods-bazaar-backend
+              exit 1
+            fi
+            echo "Attempt $i/30: Waiting for health check..."
+            sleep 10
+          done
+          echo "📊 Final deployment status:"
+          docker-compose --env-file .env.production ps
+          echo "🧹 Cleaning up old images..."
+          docker image prune -f
+          echo "🎉 Deployment completed successfully!"
+          echo "🌐 ModsBazaar Backend API available at: http://$(hostname -I | awk '{print $1}'):5000"
