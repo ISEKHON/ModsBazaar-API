@@ -65,7 +65,7 @@ router.get('/categories', catchAsync(async (req: Request, res: Response): Promis
 // Get all mods with filtering, sorting, and pagination
 router.get('/', optionalAuthMiddleware, [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
+  query('limit').optional().isInt({ min: 1, max: 5000 }).withMessage('Limit must be between 1 and 5000'),
   query('type').optional().isIn(['free', 'paid', 'unlock']).withMessage('Invalid mod type'),
   query('game').optional().isIn(['FS22', 'FS25', 'Both']).withMessage('Invalid game'),
   query('category').optional().isString(),
@@ -602,7 +602,7 @@ router.post('/:slug/review', authMiddleware, verifiedMiddleware, [
 // Search mods
 router.get('/search/:query', optionalAuthMiddleware, [
   query('page').optional().isInt({ min: 1 }),
-  query('limit').optional().isInt({ min: 1, max: 50 })
+  query('limit').optional().isInt({ min: 1, max: 5000 })
 ], catchAsync(async (req: Request, res: Response): Promise<any> => {
   try {
     const { query: searchQuery } = req.params;

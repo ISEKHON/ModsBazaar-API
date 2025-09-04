@@ -227,7 +227,7 @@ router.get('/dashboard', catchAsync(async (req: Request, res: Response): Promise
 // Get all users with advanced filtering
 router.get('/users', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('limit').optional().isInt({ min: 1, max: 5000 }).withMessage('Limit must be between 1 and 5000'),
   query('search').optional().isString().withMessage('Search must be a string'),
   query('role').optional().isIn(['user', 'admin', 'moderator']).withMessage('Invalid role'),
   query('status').optional().isIn(['active', 'inactive', 'banned']).withMessage('Invalid status'),
@@ -326,7 +326,7 @@ router.get('/users', [
 // Get all mods with advanced filtering
 router.get('/mods', [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('limit').optional().isInt({ min: 1, max: 5000 }).withMessage('Limit must be between 1 and 5000'),
   query('search').optional().isString().withMessage('Search must be a string'),
   query('type').optional().isIn(['free', 'paid', 'unlock']).withMessage('Invalid type'),
   query('game').optional().isIn(['FS22', 'FS25']).withMessage('Invalid game'),
@@ -860,6 +860,262 @@ router.get('/analytics', [
       period,
       metric,
       analytics
+    }
+  });
+}));
+
+// Get all purchase records (manual and automated)
+router.get('/purchases', catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const { page = 1, limit = 50, search } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+
+  // Build search filter
+  let userFilter = {};
+  if (search) {
+    const users = await User.find({
+      $or: [
+        { username: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ]
+    }).select('_id');
+    
+    const userIds = users.map(u => u._id);
+    userFilter = { userId: { $in: userIds } };
+  }
+
+  // Get purchase records from users' purchasedMods
+  const purchaseRecords = await User.aggregate([
+    {
+      $match: userFilter
+    },
+    {
+      $unwind: '$purchasedMods'
+    },
+    {
+      $lookup: {
+        from: 'mods',
+        localField: 'purchasedMods',
+        foreignField: '_id',
+        as: 'mod'
+      }
+    },
+    {
+      $unwind: '$mod'
+    },
+    {
+      $match: {
+        'mod.type': 'paid'
+      }
+    },
+    {
+      $project: {
+        _id: { $toString: '$_id' },
+        userId: '$_id',
+        modId: '$purchasedMods',
+        user: {
+          username: '$username',
+          email: '$email',
+          gamerTag: '$gamerTag'
+        },
+        mod: {
+          name: '$mod.name',
+          slug: '$mod.slug',
+          price: '$mod.price',
+          thumbnail: '$mod.thumbnail'
+        },
+        purchasedAt: '$createdAt',
+        paymentMethod: 'manual',
+        status: 'completed'
+      }
+    },
+    {
+      $sort: { purchasedAt: -1 }
+    },
+    {
+      $skip: skip
+    },
+    {
+      $limit: Number(limit)
+    }
+  ]);
+
+  const totalCount = await User.aggregate([
+    {
+      $match: userFilter
+    },
+    {
+      $unwind: '$purchasedMods'
+    },
+    {
+      $lookup: {
+        from: 'mods',
+        localField: 'purchasedMods',
+        foreignField: '_id',
+        as: 'mod'
+      }
+    },
+    {
+      $unwind: '$mod'
+    },
+    {
+      $match: {
+        'mod.type': 'paid'
+      }
+    },
+    {
+      $count: 'total'
+    }
+  ]);
+
+  const total = totalCount[0]?.total || 0;
+
+  res.json({
+    status: 'success',
+    data: {
+      purchases: purchaseRecords,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(total / Number(limit)),
+        totalResults: total,
+        hasNext: Number(page) < Math.ceil(total / Number(limit)),
+        hasPrev: Number(page) > 1
+      }
+    }
+  });
+}));
+
+// Manually add a purchase for a user
+router.post('/purchases/manual', [
+  body('userId').isMongoId().withMessage('Valid user ID is required'),
+  body('modId').isMongoId().withMessage('Valid mod ID is required'),
+  body('notes').optional().isString().withMessage('Notes must be a string')
+], catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+
+  const { userId, modId, notes } = req.body;
+
+  // Check if user exists
+  const user = await User.findById(userId);
+  if (!user) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'User not found'
+    });
+  }
+
+  // Check if mod exists and is paid
+  const mod = await Mod.findById(modId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found'
+    });
+  }
+
+  if (mod.type !== 'paid') {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Only paid mods can be purchased'
+    });
+  }
+
+  // Check if user already purchased this mod
+  if (user.purchasedMods?.includes(modId)) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'User has already purchased this mod'
+    });
+  }
+
+  // Add mod to user's purchased mods
+  user.purchasedMods = user.purchasedMods || [];
+  user.purchasedMods.push(modId);
+  
+  // Update total spent
+  user.totalSpent = (user.totalSpent || 0) + (mod.price || 0);
+  
+  await user.save();
+
+  res.json({
+    status: 'success',
+    message: `Purchase recorded successfully. ${user.username} can now download ${mod.name}.`,
+    data: {
+      userId,
+      modId,
+      modName: mod.name,
+      price: mod.price,
+      notes
+    }
+  });
+}));
+
+// Revoke a purchase (remove mod from user's purchased mods)
+router.delete('/purchases/:purchaseId', catchAsync(async (req: Request, res: Response): Promise<any> => {
+  const { purchaseId } = req.params;
+  
+  // Parse the purchaseId - format should be "userId"
+  // We'll need to get userId and modId from request body or query
+  const { userId, modId } = req.query;
+  
+  if (!userId || !modId) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Both userId and modId are required'
+    });
+  }
+
+  // Convert string IDs to ObjectIds
+  const userObjectId = new mongoose.Types.ObjectId(userId as string);
+  const modObjectId = new mongoose.Types.ObjectId(modId as string);
+
+  // Check if user exists
+  const user = await User.findById(userObjectId);
+  if (!user) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'User not found'
+    });
+  }
+
+  // Check if mod exists
+  const mod = await Mod.findById(modObjectId);
+  if (!mod) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Mod not found'
+    });
+  }
+
+  // Check if user has purchased this mod
+  if (!user.purchasedMods?.includes(modObjectId)) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'User has not purchased this mod'
+    });
+  }
+
+  // Remove mod from user's purchased mods
+  user.purchasedMods = user.purchasedMods.filter(id => !id.equals(modObjectId));
+  
+  // Update total spent
+  user.totalSpent = Math.max(0, (user.totalSpent || 0) - (mod.price || 0));
+  
+  await user.save();
+
+  res.json({
+    status: 'success',
+    message: `Purchase revoked successfully. ${user.username} can no longer download ${mod.name}.`,
+    data: {
+      userId,
+      modId,
+      modName: mod.name
     }
   });
 }));
