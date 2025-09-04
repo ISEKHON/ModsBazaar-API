@@ -400,7 +400,7 @@ router.patch('/admin/:id/review', authMiddleware, adminMiddleware, [
   await submission.save();
 
   // If approved, optionally auto-publish (or require separate publish step)
-  let publishedMod = null;
+  let publishedMod: any = null;
   if (action === 'approve') {
     // Get the original submitter's information
     const originalSubmitter = await User.findById(submission.submittedBy);
@@ -460,8 +460,7 @@ router.patch('/admin/:id/review', authMiddleware, adminMiddleware, [
       }
     };
 
-    publishedMod = new Mod(modData);
-    await publishedMod.save();
+    publishedMod = await new Mod(modData).save();
 
     // Link the published mod to the submission
     submission.publishedModId = publishedMod._id as mongoose.Types.ObjectId;

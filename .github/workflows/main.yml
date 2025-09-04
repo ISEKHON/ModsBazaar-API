@@ -47,30 +47,20 @@ jobs:
         node-version: '18'
         cache: 'npm'
 
-    - name: Install dependencies
-      run: npm ci
+    - name: Clean install dependencies
+      run: |
+        npm ci
+        npm ls --depth=0
+
+    - name: Verify TypeScript setup
+      run: |
+        npx tsc --version
+        npm list @types/express @types/jsonwebtoken @types/bcryptjs @types/compression
 
     - name: Build TypeScript application
       run: npm run build
       env:
         NODE_ENV: production
-        MONGODB_URI: ${{ secrets.MONGODB_URI_PROD }}
-        JWT_SECRET: ${{ secrets.JWT_SECRET }}
-        JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN || '7d' }}
-        REDIS_URL: ${{ secrets.REDIS_URL }}
-        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
-        EMAIL_PORT: ${{ secrets.EMAIL_PORT || '587' }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-        STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-        STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        FRONTEND_URL: ${{ secrets.FRONTEND_URL_PROD }}
-        MASTER_API_KEY: ${{ secrets.MASTER_API_KEY }}
 
     - name: Convert repository name to lowercase
       run: |
