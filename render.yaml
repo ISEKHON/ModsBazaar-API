@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: modsbazaar-backend
+    env: node
+    region: singapore # You can change this to: oregon, ohio, singapore, frankfurt
+    plan: free # You can upgrade to: starter ($7/month), standard ($25/month), pro ($85/month)
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false # Set this in Render dashboard
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: REDIS_URL
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: 587
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+      - key: FRONTEND_URL_PROD
+        value: https://modsbazaar.vercel.app
+      - key: MASTER_API_KEY
+        sync: false
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX
+        value: 100
