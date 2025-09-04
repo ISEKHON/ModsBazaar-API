@@ -54,7 +54,7 @@ jobs:
 
     - name: Verify TypeScript setup
       run: |
-        npx --package=typescript tsc --version
+        npm run tsc-version
         npm list @types/express @types/jsonwebtoken @types/bcryptjs @types/compression
 
     - name: Build TypeScript application

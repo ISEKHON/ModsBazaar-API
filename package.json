@@ -13,7 +13,8 @@
     "seed": "ts-node scripts/seedDatabase.ts",
     "wipe": "ts-node scripts/wipeDatabase.ts",
     "reset": "npm run wipe && npm run seed",
-    "test-db": "ts-node scripts/testDatabase.ts"
+    "test-db": "ts-node scripts/testDatabase.ts",
+    "tsc-version": "tsc --version"
   },
   "keywords": [
     "modsbazaar",
