@@ -13,7 +13,7 @@ const router = express.Router();
 // Rate limiting for submissions
 const submissionLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: process.env.DISABLE_RATE_LIMIT ? 1000 : 3, // 3 submissions per day
+  max: process.env.DISABLE_RATE_LIMIT ? 1000 : 40, // 3 submissions per day
   message: {
     status: 'error',
     message: 'Too many submissions today. Please wait 24 hours before submitting again.',
@@ -135,6 +135,16 @@ router.post('/', authMiddleware, verifiedMiddleware, submissionLimiter, submitMo
     status: 'pending'
   };
 
+  // Clear price and unlockCode based on type
+  if (submissionData.type === 'free') {
+    submissionData.price = undefined;
+    submissionData.unlockCode = undefined;
+  } else if (submissionData.type === 'unlock') {
+    submissionData.price = undefined;
+  } else if (submissionData.type === 'paid') {
+    submissionData.unlockCode = undefined;
+  }
+
   // Additional validation for paid/unlock mods
   if (submissionData.type === 'paid' && (!submissionData.price || submissionData.price <= 0)) {
     return res.status(400).json({
@@ -237,8 +247,19 @@ router.patch('/:id', authMiddleware, verifiedMiddleware, submitModValidation, ca
     });
   }
 
+  // Clear price and unlockCode based on type
+  const updateData = { ...req.body };
+  if (updateData.type === 'free') {
+    updateData.price = undefined;
+    updateData.unlockCode = undefined;
+  } else if (updateData.type === 'unlock') {
+    updateData.price = undefined;
+  } else if (updateData.type === 'paid') {
+    updateData.unlockCode = undefined;
+  }
+
   // Update fields
-  Object.assign(submission, req.body);
+  Object.assign(submission, updateData);
   submission.updatedAt = new Date();
   
   await submission.save();
