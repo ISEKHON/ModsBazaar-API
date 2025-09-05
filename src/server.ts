@@ -32,6 +32,13 @@ import reviewRoutes from './routes/reviews';
 // Load environment variables
 dotenv.config();
 
+// Debug environment variables
+console.log('🔍 Environment Debug:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
+console.log('MONGODB_URI_PROD exists:', !!process.env.MONGODB_URI_PROD);
+console.log('Current working directory:', process.cwd());
+
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {

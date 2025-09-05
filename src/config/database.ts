@@ -3,9 +3,19 @@ import mongoose from 'mongoose';
 // MongoDB connection configuration
 export const connectDB = async (): Promise<void> => {
   try {
-    const mongoURI = process.env.NODE_ENV === 'production' 
-      ? process.env.MONGODB_URI_PROD! 
-      : process.env.MONGODB_URI!;
+    const mongoURI = process.env.MONGODB_URI_PROD || process.env.MONGODB_URI;
+    
+    console.log('🔍 Database Debug:');
+    console.log('NODE_ENV:', process.env.NODE_ENV);
+    console.log('MONGODB_URI:', process.env.MONGODB_URI ? '***EXISTS***' : 'MISSING');
+    console.log('MONGODB_URI_PROD:', process.env.MONGODB_URI_PROD ? '***EXISTS***' : 'MISSING');
+    console.log('Selected URI:', mongoURI ? '***EXISTS***' : 'MISSING');
+    
+    if (!mongoURI) {
+      throw new Error('MongoDB URI is not defined. Please check your environment variables.');
+    }
+
+    console.log('🔄 Connecting to MongoDB...');
 
     const options = {
       // Connection options for better performance

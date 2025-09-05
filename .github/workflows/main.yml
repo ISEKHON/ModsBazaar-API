@@ -12,7 +12,7 @@ env:
   # ModsBazaar Backend Environment Variables
   NODE_ENV: production
   PORT: 5000
-  MONGODB_URI: ${{ secrets.MONGODB_URI_PROD }}
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
   JWT_SECRET: ${{ secrets.JWT_SECRET }}
   JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN || '7d' }}
   REDIS_URL: ${{ secrets.REDIS_URL }}
@@ -95,7 +95,7 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           NODE_ENV=production
-          MONGODB_URI=${{ secrets.MONGODB_URI_PROD }}
+          MONGODB_URI=${{ secrets.MONGODB_URI }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN || '7d' }}
           REDIS_URL=${{ secrets.REDIS_URL }}
@@ -139,7 +139,7 @@ jobs:
           cat > .env.production << 'ENV_EOF'
           NODE_ENV=production
           PORT=5000
-          MONGODB_URI="${{ secrets.MONGODB_URI_PROD }}"
+          MONGODB_URI="${{ secrets.MONGODB_URI }}"
           JWT_SECRET="${{ secrets.JWT_SECRET }}"
           JWT_EXPIRES_IN="${{ secrets.JWT_EXPIRES_IN || '7d' }}"
           REDIS_URL="${{ secrets.REDIS_URL }}"
@@ -212,17 +212,17 @@ jobs:
           echo "🎯 Starting services..."
           docker-compose --env-file .env.production up -d
           echo "⏳ Waiting for application to be healthy..."
-          for i in {1..30}; do
+          for i in {1..10}; do
             if docker-compose --env-file .env.production ps | grep -q "healthy"; then
               echo "✅ Application is healthy!"
               break
             fi
-            if [ $i -eq 30 ]; then
+            if [ $i -eq 10 ]; then
               echo "❌ Application failed to become healthy within 5 minutes"
               docker-compose --env-file .env.production logs mods-bazaar-backend
               exit 1
             fi
-            echo "Attempt $i/30: Waiting for health check..."
+            echo "Attempt $i/10: Waiting for health check..."
             sleep 10
           done
           echo "📊 Final deployment status:"
