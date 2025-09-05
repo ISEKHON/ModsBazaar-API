@@ -84,7 +84,7 @@ app.use(cors({
   origin: [
     process.env.FRONTEND_URL || "http://localhost:3000",
     process.env.FRONTEND_URL_PROD || "https://mods-bazaar.vercel.app",
-    "https://modsbazaar.me"
+    "https://www.modsbazaar.me"
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
