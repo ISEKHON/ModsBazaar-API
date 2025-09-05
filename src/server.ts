@@ -83,7 +83,8 @@ if (process.env.NODE_ENV !== 'development' || !process.env.DISABLE_RATE_LIMIT) {
 app.use(cors({
   origin: [
     process.env.FRONTEND_URL || "http://localhost:3000",
-    process.env.FRONTEND_URL_PROD || "https://mods-bazaar.vercel.app"
+    process.env.FRONTEND_URL_PROD || "https://mods-bazaar.vercel.app",
+    "https://modsbazaar.me"
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
